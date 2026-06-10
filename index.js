@@ -6,7 +6,6 @@ import path from 'path';
 // Importing the modules
 import pairRouter from './pair.js';
 import qrRouter from './qr.js';
-import QRCode from 'qrcode';
 
 const app = express();
 
@@ -34,7 +33,7 @@ app.use('/pair', pairRouter);
 app.use('/qr', qrRouter);
 
 app.listen(PORT, () => {
-    console.log(`🤖 SILA-MD Bot\n👨‍💻 Owner: SILA\n📱 YouTube: @mr_unique_hacker\n\nGitHub: @mruniquehacker\n\n✅ Server running on http://localhost:${PORT}`);
+    console.log(`🤖 SILA-MD Bot\n👨‍💻 Owner: SILA\n✅ Server running on http://localhost:${PORT}`);
 });
 
 export default app;

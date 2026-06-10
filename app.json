@@ -1,0 +1,16 @@
+{
+    "name": "SILA-MD",
+    "description": "Pair Session Generator",
+    "logo": "https://files.catbox.moe/36vahk.png",
+    "repository": "https://github.com/Sila-Md/SILA-M.D",
+    "keywords": ["SILA-MD", "SILA-TECH", "MBWA-MD"],
+    "success_url": "/", 
+    "buildpacks": [{ "url": "https://github.com/heroku/heroku-buildpack-nodejs#latest" } ],
+    "env": {      
+      "PORT": {
+        "description": "Port for web app.4000,5000,3000... any!",
+        "value": "5000",
+        "required": false 
+      }
+    }   
+}

@@ -20,6 +20,21 @@ function removeFile(FilePath) {
     }
 }
 
+// Function to convert session folder to Base64
+async function getSessionBase64(sessionPath) {
+    try {
+        const credsFile = sessionPath + '/creds.json';
+        if (!fs.existsSync(credsFile)) return null;
+        
+        const credsContent = fs.readFileSync(credsFile);
+        const base64Session = credsContent.toString('base64');
+        return base64Session;
+    } catch (error) {
+        console.error('Error converting session to base64:', error);
+        return null;
+    }
+}
+
 router.get('/', async (req, res) => {
     // Generate unique session for each request to avoid conflicts
     const sessionId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -53,8 +68,7 @@ router.get('/', async (req, res) => {
                 console.log('2. Go to Settings > Linked Devices');
                 console.log('3. Tap "Link a Device"');
                 console.log('4. Scan the QR code below');
-                // Display QR in terminal
-                //qrcodeTerminal.generate(qr, { small: true });
+                
                 try {
                     // Generate QR code as data URL
                     const qrDataURL = await QRCode.toDataURL(qr, {
@@ -72,6 +86,7 @@ router.get('/', async (req, res) => {
                         responseSent = true;
                         console.log('QR Code generated successfully');
                         await res.send({ 
+                            success: true,
                             qr: qrDataURL, 
                             message: 'QR Code Generated! Scan it with your WhatsApp app.',
                             instructions: [
@@ -86,7 +101,10 @@ router.get('/', async (req, res) => {
                     console.error('Error generating QR code:', qrError);
                     if (!responseSent) {
                         responseSent = true;
-                        res.status(500).send({ code: 'Failed to generate QR code' });
+                        res.status(500).send({ 
+                            success: false, 
+                            message: 'Failed to generate QR code' 
+                        });
                     }
                 }
             };
@@ -95,18 +113,18 @@ router.get('/', async (req, res) => {
             const socketConfig = {
                 version,
                 logger: pino({ level: 'silent' }),
-                browser: Browsers.windows('Chrome'), // Using Browsers enum for better compatibility
+                browser: Browsers.windows('Chrome'),
                 auth: {
                     creds: state.creds,
                     keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
                 },
-                markOnlineOnConnect: false, // Disable to reduce connection issues
-                generateHighQualityLinkPreview: false, // Disable to reduce connection issues
-                defaultQueryTimeoutMs: 60000, // Increase timeout
-                connectTimeoutMs: 60000, // Increase connection timeout
-                keepAliveIntervalMs: 30000, // Keep connection alive
-                retryRequestDelayMs: 250, // Retry delay
-                maxRetries: 5, // Maximum retries
+                markOnlineOnConnect: false,
+                generateHighQualityLinkPreview: false,
+                defaultQueryTimeoutMs: 60000,
+                connectTimeoutMs: 60000,
+                keepAliveIntervalMs: 30000,
+                retryRequestDelayMs: 250,
+                maxRetries: 5,
             };
 
             // Create socket and bind events
@@ -126,48 +144,72 @@ router.get('/', async (req, res) => {
                 if (connection === 'open') {
                     console.log('✅ Connected successfully!');
                     console.log('💾 Session saved to:', dirs);
-                    reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+                    reconnectAttempts = 0;
                     
                     try {
+                        // Get Base64 session
+                        const base64Session = await getSessionBase64(dirs);
                         
-                        
-                        // Read the session file
-                        const sessionKnight = fs.readFileSync(dirs + '/creds.json');
-                        
-                        // Get the user's JID from the session
-                        const userJid = Object.keys(sock.authState.creds.me || {}).length > 0 
-                            ? jidNormalizedUser(sock.authState.creds.me.id) 
-                            : null;
-                            
-                        if (userJid) {
-                            // Send session file to user
-                            await sock.sendMessage(userJid, {
-                                document: sessionKnight,
-                                mimetype: 'application/json',
-                                fileName: 'creds.json'
-                            });
-                            console.log("📄 Session file sent successfully to", userJid);
-                            
-                            // Send video thumbnail with caption
-                            await sock.sendMessage(userJid, {
-                                image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                                caption: `🎬 *KnightBot MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/NjOipI2AoMk`
-                            });
-                            console.log("🎬 Video guide sent successfully");
-                            
-                            // Send warning message
-                            await sock.sendMessage(userJid, {
-                                text: `⚠️Do not share this file with anybody⚠️\n 
-┌┤✑  Thanks for using Knight Bot
-│└────────────┈ ⳹        
-│©2025 Mr Unique Hacker 
-└─────────────────┈ ⳹\n\n`
-                            });
+                        if (base64Session) {
+                            // Get the user's JID from the session
+                            const userJid = Object.keys(sock.authState.creds.me || {}).length > 0 
+                                ? jidNormalizedUser(sock.authState.creds.me.id) 
+                                : null;
+                                
+                            if (userJid) {
+                                // Send Base64 session as text message
+                                await sock.sendMessage(userJid, {
+                                    text: `*🎉 SILA-MD Session Generated Successfully!* 🎉\n\n` +
+                                          `*📱 Your Session (Base64):*\n` +
+                                          `\`\`\`${base64Session}\`\`\`\n\n` +
+                                          `*⚠️ IMPORTANT:*\n` +
+                                          `• Save this session securely\n` +
+                                          `• Do not share with anyone\n` +
+                                          `• Use it to restore your bot anytime\n\n` +
+                                          `*🔧 How to use:*\n` +
+                                          `1. Copy the base64 string above\n` +
+                                          `2. Save it as creds_base64.txt\n` +
+                                          `3. To restore: Decode base64 to creds.json\n\n` +
+                                          `*🤖 Bot:* SILA-MD\n` +
+                                          `*👨‍💻 Owner:* SILA\n` +
+                                          `*⭐ Version:* 2.0.0`
+                                });
+                                console.log("📄 Base64 session sent successfully to", userJid);
+                                
+                                // Also send as document for easy saving
+                                const sessionBuffer = Buffer.from(base64Session);
+                                await sock.sendMessage(userJid, {
+                                    document: sessionBuffer,
+                                    mimetype: 'text/plain',
+                                    fileName: 'SILA-MD_Session.txt'
+                                });
+                                console.log("📎 Session file sent as document");
+                                
+                                // Send video thumbnail with caption
+                                await sock.sendMessage(userJid, {
+                                    image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
+                                    caption: `🎬 *SILA-MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/NjOipI2AoMk`
+                                });
+                                console.log("🎬 Video guide sent successfully");
+                                
+                                // Send warning message
+                                await sock.sendMessage(userJid, {
+                                    text: `⚠️ *DO NOT SHARE THIS SESSION WITH ANYBODY* ⚠️\n\n` +
+                                          `┌┤✑  Thanks for using SILA-MD\n` +
+                                          `│└────────────┈ ⳹        \n` +
+                                          `│©2025 SILA \n` +
+                                          `└─────────────────┈ ⳹\n\n` +
+                                          `*💾 Save this session message!*`
+                                });
+                                console.log("⚠️ Warning message sent successfully");
+                            } else {
+                                console.log("❌ Could not determine user JID to send session");
+                            }
                         } else {
-                            console.log("❌ Could not determine user JID to send session file");
+                            console.log("❌ Failed to generate Base64 session");
                         }
                     } catch (error) {
-                        console.error("Error sending session file:", error);
+                        console.error("Error sending session:", error);
                     }
                     
                     // Clean up session after successful connection and sending files
@@ -179,7 +221,7 @@ router.get('/', async (req, res) => {
                         } else {
                             console.log('❌ Failed to clean up session folder');
                         }
-                    }, 15000); // Wait 15 seconds before cleanup to ensure messages are sent
+                    }, 15000);
                 }
 
                 if (connection === 'close') {
@@ -190,7 +232,6 @@ router.get('/', async (req, res) => {
                     
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     
-                    // Handle specific error codes
                     if (statusCode === 401) {
                         console.log('🔐 Logged out - need new QR code');
                         removeFile(dirs);
@@ -200,7 +241,6 @@ router.get('/', async (req, res) => {
                         
                         if (reconnectAttempts <= maxReconnectAttempts) {
                             console.log(`🔄 Reconnect attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
-                            // Wait a bit before reconnecting
                             setTimeout(() => {
                                 try {
                                     sock = makeWASocket(socketConfig);
@@ -214,34 +254,39 @@ router.get('/', async (req, res) => {
                             console.log('❌ Max reconnect attempts reached');
                             if (!responseSent) {
                                 responseSent = true;
-                                res.status(503).send({ code: 'Connection failed after multiple attempts' });
+                                res.status(503).send({ 
+                                    success: false, 
+                                    message: 'Connection failed after multiple attempts' 
+                                });
                             }
                         }
-                    } else {
-                        console.log('🔄 Connection lost - attempting to reconnect...');
-                        // Let it reconnect automatically
                     }
                 }
             };
 
             // Bind the event handler
             sock.ev.on('connection.update', handleConnectionUpdate);
-
             sock.ev.on('creds.update', saveCreds);
 
             // Set a timeout to clean up if no QR is generated
             setTimeout(() => {
                 if (!responseSent) {
                     responseSent = true;
-                    res.status(408).send({ code: 'QR generation timeout' });
+                    res.status(408).send({ 
+                        success: false, 
+                        message: 'QR generation timeout' 
+                    });
                     removeFile(dirs);
                 }
-            }, 30000); // 30 second timeout
+            }, 30000);
 
         } catch (err) {
             console.error('Error initializing session:', err);
             if (!res.headersSent) {
-                res.status(503).send({ code: 'Service Unavailable' });
+                res.status(503).send({ 
+                    success: false, 
+                    message: 'Service Unavailable' 
+                });
             }
             removeFile(dirs);
         }

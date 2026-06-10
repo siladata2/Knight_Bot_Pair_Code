@@ -4,7 +4,6 @@ import pino from 'pino';
 import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import { delay } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
-import qrcodeTerminal from 'qrcode-terminal';
 
 const router = express.Router();
 
@@ -20,7 +19,7 @@ function removeFile(FilePath) {
     }
 }
 
-// Function to convert session folder to Base64
+// Function to convert session folder to Base64 with prefix
 async function getSessionBase64(sessionPath) {
     try {
         const credsFile = sessionPath + '/creds.json';
@@ -28,7 +27,9 @@ async function getSessionBase64(sessionPath) {
         
         const credsContent = fs.readFileSync(credsFile);
         const base64Session = credsContent.toString('base64');
-        return base64Session;
+        // Add prefix "SILA-MD~" before the base64
+        const prefixedBase64 = `SILA-MD~${base64Session}`;
+        return prefixedBase64;
     } catch (error) {
         console.error('Error converting session to base64:', error);
         return null;
@@ -46,7 +47,6 @@ router.get('/', async (req, res) => {
     }
 
     async function initiateSession() {
-        // ✅ PERMANENT FIX: Create the session folder before anything
         if (!fs.existsSync(dirs)) fs.mkdirSync(dirs, { recursive: true });
 
         const { state, saveCreds } = await useMultiFileAuthState(dirs);
@@ -70,7 +70,6 @@ router.get('/', async (req, res) => {
                 console.log('4. Scan the QR code below');
                 
                 try {
-                    // Generate QR code as data URL
                     const qrDataURL = await QRCode.toDataURL(qr, {
                         errorCorrectionLevel: 'M',
                         type: 'image/png',
@@ -109,7 +108,6 @@ router.get('/', async (req, res) => {
                 }
             };
 
-            // Improved Baileys socket configuration
             const socketConfig = {
                 version,
                 logger: pino({ level: 'silent' }),
@@ -127,12 +125,10 @@ router.get('/', async (req, res) => {
                 maxRetries: 5,
             };
 
-            // Create socket and bind events
             let sock = makeWASocket(socketConfig);
             let reconnectAttempts = 0;
             const maxReconnectAttempts = 3;
 
-            // Connection event handler function
             const handleConnectionUpdate = async (update) => {
                 const { connection, lastDisconnect, qr } = update;
                 console.log(`🔄 Connection update: ${connection || 'undefined'}`);
@@ -147,37 +143,33 @@ router.get('/', async (req, res) => {
                     reconnectAttempts = 0;
                     
                     try {
-                        // Get Base64 session
-                        const base64Session = await getSessionBase64(dirs);
+                        const prefixedBase64 = await getSessionBase64(dirs);
                         
-                        if (base64Session) {
-                            // Get the user's JID from the session
+                        if (prefixedBase64) {
                             const userJid = Object.keys(sock.authState.creds.me || {}).length > 0 
                                 ? jidNormalizedUser(sock.authState.creds.me.id) 
                                 : null;
                                 
                             if (userJid) {
-                                // Send Base64 session as text message
                                 await sock.sendMessage(userJid, {
                                     text: `*🎉 SILA-MD Session Generated Successfully!* 🎉\n\n` +
-                                          `*📱 Your Session (Base64):*\n` +
-                                          `\`\`\`${base64Session}\`\`\`\n\n` +
+                                          `*📱 Your Session:*\n` +
+                                          `\`\`\`${prefixedBase64}\`\`\`\n\n` +
                                           `*⚠️ IMPORTANT:*\n` +
                                           `• Save this session securely\n` +
                                           `• Do not share with anyone\n` +
                                           `• Use it to restore your bot anytime\n\n` +
                                           `*🔧 How to use:*\n` +
-                                          `1. Copy the base64 string above\n` +
-                                          `2. Save it as creds_base64.txt\n` +
-                                          `3. To restore: Decode base64 to creds.json\n\n` +
+                                          `1. Copy the full session string above\n` +
+                                          `2. It starts with "SILA-MD~" followed by base64\n` +
+                                          `3. Save it as your session\n\n` +
                                           `*🤖 Bot:* SILA-MD\n` +
                                           `*👨‍💻 Owner:* SILA\n` +
                                           `*⭐ Version:* 2.0.0`
                                 });
                                 console.log("📄 Base64 session sent successfully to", userJid);
                                 
-                                // Also send as document for easy saving
-                                const sessionBuffer = Buffer.from(base64Session);
+                                const sessionBuffer = Buffer.from(prefixedBase64);
                                 await sock.sendMessage(userJid, {
                                     document: sessionBuffer,
                                     mimetype: 'text/plain',
@@ -185,21 +177,14 @@ router.get('/', async (req, res) => {
                                 });
                                 console.log("📎 Session file sent as document");
                                 
-                                // Send video thumbnail with caption
-                                await sock.sendMessage(userJid, {
-                                    image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                                    caption: `🎬 *SILA-MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/NjOipI2AoMk`
-                                });
-                                console.log("🎬 Video guide sent successfully");
-                                
-                                // Send warning message
                                 await sock.sendMessage(userJid, {
                                     text: `⚠️ *DO NOT SHARE THIS SESSION WITH ANYBODY* ⚠️\n\n` +
                                           `┌┤✑  Thanks for using SILA-MD\n` +
                                           `│└────────────┈ ⳹        \n` +
                                           `│©2025 SILA \n` +
                                           `└─────────────────┈ ⳹\n\n` +
-                                          `*💾 Save this session message!*`
+                                          `*💾 Save this session message!*\n` +
+                                          `*📝 Session Format:* SILA-MD~[base64]`
                                 });
                                 console.log("⚠️ Warning message sent successfully");
                             } else {
@@ -212,7 +197,6 @@ router.get('/', async (req, res) => {
                         console.error("Error sending session:", error);
                     }
                     
-                    // Clean up session after successful connection and sending files
                     setTimeout(() => {
                         console.log('🧹 Cleaning up session...');
                         const deleted = removeFile(dirs);
@@ -264,11 +248,9 @@ router.get('/', async (req, res) => {
                 }
             };
 
-            // Bind the event handler
             sock.ev.on('connection.update', handleConnectionUpdate);
             sock.ev.on('creds.update', saveCreds);
 
-            // Set a timeout to clean up if no QR is generated
             setTimeout(() => {
                 if (!responseSent) {
                     responseSent = true;

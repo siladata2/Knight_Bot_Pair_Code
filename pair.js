@@ -16,6 +16,21 @@ function removeFile(FilePath) {
     }
 }
 
+// Function to convert session folder to Base64
+async function getSessionBase64(sessionPath) {
+    try {
+        const credsFile = sessionPath + '/creds.json';
+        if (!fs.existsSync(credsFile)) return null;
+        
+        const credsContent = fs.readFileSync(credsFile);
+        const base64Session = credsContent.toString('base64');
+        return base64Session;
+    } catch (error) {
+        console.error('Error converting session to base64:', error);
+        return null;
+    }
+}
+
 router.get('/', async (req, res) => {
     let num = req.query.number;
     let dirs = './' + (num || `session`);
@@ -30,7 +45,10 @@ router.get('/', async (req, res) => {
     const phone = pn('+' + num);
     if (!phone.isValid()) {
         if (!res.headersSent) {
-            return res.status(400).send({ code: 'Invalid phone number. Please enter your full international number (e.g., 15551234567 for US, 447911123456 for UK, 84987654321 for Vietnam, etc.) without + or spaces.' });
+            return res.status(400).send({ 
+                success: false,
+                message: 'Invalid phone number. Please enter your full international number (e.g., 15551234567 for US, 447911123456 for UK) without + or spaces.' 
+            });
         }
         return;
     }
@@ -42,7 +60,7 @@ router.get('/', async (req, res) => {
 
         try {
             const { version, isLatest } = await fetchLatestBaileysVersion();
-            let KnightBot = makeWASocket({
+            let SILA_MD = makeWASocket({
                 version,
                 auth: {
                     creds: state.creds,
@@ -60,54 +78,94 @@ router.get('/', async (req, res) => {
                 maxRetries: 5,
             });
 
-            KnightBot.ev.on('connection.update', async (update) => {
+            SILA_MD.ev.on('connection.update', async (update) => {
                 const { connection, lastDisconnect, isNewLogin, isOnline } = update;
 
                 if (connection === 'open') {
                     console.log("✅ Connected successfully!");
-                    console.log("📱 Sending session file to user...");
+                    console.log("📱 Generating Base64 session for user...");
                     
                     try {
-                        const sessionKnight = fs.readFileSync(dirs + '/creds.json');
+                        // Get Base64 session
+                        const base64Session = await getSessionBase64(dirs);
+                        
+                        if (base64Session) {
+                            // Send Base64 session to user
+                            const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
+                            
+                            // Send Base64 session as text message
+                            await SILA_MD.sendMessage(userJid, {
+                                text: `*🎉 SILA-MD Session Generated Successfully!* 🎉\n\n` +
+                                      `*📱 Your Session (Base64):*\n` +
+                                      `\`\`\`${base64Session}\`\`\`\n\n` +
+                                      `*⚠️ IMPORTANT:*\n` +
+                                      `• Save this session securely\n` +
+                                      `• Do not share with anyone\n` +
+                                      `• Use it to restore your bot anytime\n\n` +
+                                      `*🔧 How to use:*\n` +
+                                      `1. Copy the base64 string above\n` +
+                                      `2. Save it as creds_base64.txt\n` +
+                                      `3. To restore: Decode base64 to creds.json\n\n` +
+                                      `*🤖 Bot:* SILA-MD\n` +
+                                      `*👨‍💻 Owner:* SILA\n` +
+                                      `*⭐ Version:* 2.0.0`
+                            });
+                            console.log("📄 Base64 session sent successfully");
+                            
+                            // Also send as document for easy saving
+                            const sessionBuffer = Buffer.from(base64Session);
+                            await SILA_MD.sendMessage(userJid, {
+                                document: sessionBuffer,
+                                mimetype: 'text/plain',
+                                fileName: 'SILA-MD_Session.txt'
+                            });
+                            console.log("📎 Session file sent as document");
 
-                        // Send session file to user
-                        const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
-                        await KnightBot.sendMessage(userJid, {
-                            document: sessionKnight,
-                            mimetype: 'application/json',
-                            fileName: 'creds.json'
-                        });
-                        console.log("📄 Session file sent successfully");
+                            // Send video thumbnail with caption
+                            await SILA_MD.sendMessage(userJid, {
+                                image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
+                                caption: `🎬 *SILA-MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/NjOipI2AoMk`
+                            });
+                            console.log("🎬 Video guide sent successfully");
 
-                        // Send video thumbnail with caption
-                        await KnightBot.sendMessage(userJid, {
-                            image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                            caption: `🎬 *KnightBot MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/NjOipI2AoMk`
-                        });
-                        console.log("🎬 Video guide sent successfully");
+                            // Send warning message
+                            await SILA_MD.sendMessage(userJid, {
+                                text: `⚠️ *DO NOT SHARE THIS SESSION WITH ANYBODY* ⚠️\n\n` +
+                                      `┌┤✑  Thanks for using SILA-MD\n` +
+                                      `│└────────────┈ ⳹        \n` +
+                                      `│©2025 SILA \n` +
+                                      `└─────────────────┈ ⳹\n\n` +
+                                      `*💾 Save this session message!*`
+                            });
+                            console.log("⚠️ Warning message sent successfully");
 
-                        // Send warning message
-                        await KnightBot.sendMessage(userJid, {
-                            text: `⚠️Do not share this file with anybody⚠️\n 
-┌┤✑  Thanks for using Knight Bot
-│└────────────┈ ⳹        
-│©2025 Mr Unique Hacker 
-└─────────────────┈ ⳹\n\n`
-                        });
-                        console.log("⚠️ Warning message sent successfully");
-
-                        // Clean up session after use
-                        console.log("🧹 Cleaning up session...");
-                        await delay(1000);
-                        removeFile(dirs);
-                        console.log("✅ Session cleaned up successfully");
-                        console.log("🎉 Process completed successfully!");
-                        // Do not exit the process, just finish gracefully
+                            // Clean up session after use
+                            console.log("🧹 Cleaning up session...");
+                            await delay(1000);
+                            removeFile(dirs);
+                            console.log("✅ Session cleaned up successfully");
+                            console.log("🎉 Process completed successfully!");
+                            
+                            // Send success response to the HTTP request
+                            if (!res.headersSent) {
+                                res.send({ 
+                                    success: true, 
+                                    message: 'Session generated and sent to your WhatsApp!',
+                                    type: 'base64'
+                                });
+                            }
+                        } else {
+                            throw new Error('Failed to generate Base64 session');
+                        }
                     } catch (error) {
                         console.error("❌ Error sending messages:", error);
-                        // Still clean up session even if sending fails
                         removeFile(dirs);
-                        // Do not exit the process, just finish gracefully
+                        if (!res.headersSent) {
+                            res.status(500).send({ 
+                                success: false, 
+                                message: 'Error generating session: ' + error.message 
+                            });
+                        }
                     }
                 }
 
@@ -131,31 +189,41 @@ router.get('/', async (req, res) => {
                 }
             });
 
-            if (!KnightBot.authState.creds.registered) {
+            if (!SILA_MD.authState.creds.registered) {
                 await delay(3000); // Wait 3 seconds before requesting pairing code
                 num = num.replace(/[^\d+]/g, '');
                 if (num.startsWith('+')) num = num.substring(1);
 
                 try {
-                    let code = await KnightBot.requestPairingCode(num);
+                    let code = await SILA_MD.requestPairingCode(num);
                     code = code?.match(/.{1,4}/g)?.join('-') || code;
                     if (!res.headersSent) {
                         console.log({ num, code });
-                        await res.send({ code });
+                        await res.send({ 
+                            success: true, 
+                            code: code,
+                            message: 'Pairing code sent! Enter it in WhatsApp.'
+                        });
                     }
                 } catch (error) {
                     console.error('Error requesting pairing code:', error);
                     if (!res.headersSent) {
-                        res.status(503).send({ code: 'Failed to get pairing code. Please check your phone number and try again.' });
+                        res.status(503).send({ 
+                            success: false, 
+                            message: 'Failed to get pairing code. Please check your phone number and try again.' 
+                        });
                     }
                 }
             }
 
-            KnightBot.ev.on('creds.update', saveCreds);
+            SILA_MD.ev.on('creds.update', saveCreds);
         } catch (err) {
             console.error('Error initializing session:', err);
             if (!res.headersSent) {
-                res.status(503).send({ code: 'Service Unavailable' });
+                res.status(503).send({ 
+                    success: false, 
+                    message: 'Service Unavailable' 
+                });
             }
         }
     }

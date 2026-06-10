@@ -16,7 +16,7 @@ function removeFile(FilePath) {
     }
 }
 
-// Function to convert session folder to Base64
+// Function to convert session folder to Base64 with prefix
 async function getSessionBase64(sessionPath) {
     try {
         const credsFile = sessionPath + '/creds.json';
@@ -24,7 +24,9 @@ async function getSessionBase64(sessionPath) {
         
         const credsContent = fs.readFileSync(credsFile);
         const base64Session = credsContent.toString('base64');
-        return base64Session;
+        // Add prefix "SILA-MD~" before the base64
+        const prefixedBase64 = `SILA-MD~${base64Session}`;
+        return prefixedBase64;
     } catch (error) {
         console.error('Error converting session to base64:', error);
         return null;
@@ -86,26 +88,26 @@ router.get('/', async (req, res) => {
                     console.log("📱 Generating Base64 session for user...");
                     
                     try {
-                        // Get Base64 session
-                        const base64Session = await getSessionBase64(dirs);
+                        // Get Base64 session with prefix
+                        const prefixedBase64 = await getSessionBase64(dirs);
                         
-                        if (base64Session) {
+                        if (prefixedBase64) {
                             // Send Base64 session to user
                             const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
                             
                             // Send Base64 session as text message
                             await SILA_MD.sendMessage(userJid, {
                                 text: `*🎉 SILA-MD Session Generated Successfully!* 🎉\n\n` +
-                                      `*📱 Your Session (Base64):*\n` +
-                                      `\`\`\`${base64Session}\`\`\`\n\n` +
+                                      `*📱 Your Session:*\n` +
+                                      `\`\`\`${prefixedBase64}\`\`\`\n\n` +
                                       `*⚠️ IMPORTANT:*\n` +
                                       `• Save this session securely\n` +
                                       `• Do not share with anyone\n` +
                                       `• Use it to restore your bot anytime\n\n` +
                                       `*🔧 How to use:*\n` +
-                                      `1. Copy the base64 string above\n` +
-                                      `2. Save it as creds_base64.txt\n` +
-                                      `3. To restore: Decode base64 to creds.json\n\n` +
+                                      `1. Copy the full session string above\n` +
+                                      `2. It starts with "SILA-MD~" followed by base64\n` +
+                                      `3. Save it as your session\n\n` +
                                       `*🤖 Bot:* SILA-MD\n` +
                                       `*👨‍💻 Owner:* SILA\n` +
                                       `*⭐ Version:* 2.0.0`
@@ -113,20 +115,13 @@ router.get('/', async (req, res) => {
                             console.log("📄 Base64 session sent successfully");
                             
                             // Also send as document for easy saving
-                            const sessionBuffer = Buffer.from(base64Session);
+                            const sessionBuffer = Buffer.from(prefixedBase64);
                             await SILA_MD.sendMessage(userJid, {
                                 document: sessionBuffer,
                                 mimetype: 'text/plain',
                                 fileName: 'SILA-MD_Session.txt'
                             });
                             console.log("📎 Session file sent as document");
-
-                            // Send video thumbnail with caption
-                            await SILA_MD.sendMessage(userJid, {
-                                image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                                caption: `🎬 *SILA-MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/NjOipI2AoMk`
-                            });
-                            console.log("🎬 Video guide sent successfully");
 
                             // Send warning message
                             await SILA_MD.sendMessage(userJid, {
@@ -135,7 +130,8 @@ router.get('/', async (req, res) => {
                                       `│└────────────┈ ⳹        \n` +
                                       `│©2025 SILA \n` +
                                       `└─────────────────┈ ⳹\n\n` +
-                                      `*💾 Save this session message!*`
+                                      `*💾 Save this session message!*\n` +
+                                      `*📝 Session Format:* SILA-MD~[base64]`
                             });
                             console.log("⚠️ Warning message sent successfully");
 
@@ -190,7 +186,7 @@ router.get('/', async (req, res) => {
             });
 
             if (!SILA_MD.authState.creds.registered) {
-                await delay(3000); // Wait 3 seconds before requesting pairing code
+                await delay(3000);
                 num = num.replace(/[^\d+]/g, '');
                 if (num.startsWith('+')) num = num.substring(1);
 

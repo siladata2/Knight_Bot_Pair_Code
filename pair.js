@@ -3,6 +3,7 @@ import fs from 'fs';
 import pino from 'pino';
 import { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pn from 'awesome-phonenumber';
+import { sendButtons } from 'gifted-btns';
 
 const router = express.Router();
 
@@ -24,7 +25,6 @@ async function getSessionBase64(sessionPath) {
         
         const credsContent = fs.readFileSync(credsFile);
         const base64Session = credsContent.toString('base64');
-        // Add prefix "SILA-MD~" before the base64
         const prefixedBase64 = `SILA-MD~${base64Session}`;
         return prefixedBase64;
     } catch (error) {
@@ -37,24 +37,19 @@ router.get('/', async (req, res) => {
     let num = req.query.number;
     let dirs = './' + (num || `session`);
 
-    // Remove existing session if present
     await removeFile(dirs);
-
-    // Clean the phone number - remove any non-digit characters
     num = num.replace(/[^0-9]/g, '');
 
-    // Validate the phone number using awesome-phonenumber
     const phone = pn('+' + num);
     if (!phone.isValid()) {
         if (!res.headersSent) {
             return res.status(400).send({ 
                 success: false,
-                message: 'Invalid phone number. Please enter your full international number (e.g., 15551234567 for US, 447911123456 for UK) without + or spaces.' 
+                message: 'Invalid phone number.' 
             });
         }
         return;
     }
-    // Use the international number format (E.164, without '+')
     num = phone.getNumber('e164').replace('+', '');
 
     async function initiateSession() {
@@ -85,101 +80,60 @@ router.get('/', async (req, res) => {
 
                 if (connection === 'open') {
                     console.log("✅ Connected successfully!");
-                    console.log("📱 Generating Base64 session for user...");
                     
                     try {
-                        // Get Base64 session with prefix
                         const prefixedBase64 = await getSessionBase64(dirs);
                         
                         if (prefixedBase64) {
-                            // Send Base64 session to user
                             const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
+                            const fullSession = prefixedBase64;
                             
-                            // Send Base64 session as text message
-                            await SILA_MD.sendMessage(userJid, {
-                                text: `*🎉 SILA-MD Session Generated Successfully!* 🎉\n\n` +
-                                      `*📱 Your Session:*\n` +
-                                      `\`\`\`${prefixedBase64}\`\`\`\n\n` +
-                                      `*⚠️ IMPORTANT:*\n` +
-                                      `• Save this session securely\n` +
-                                      `• Do not share with anyone\n` +
-                                      `• Use it to restore your bot anytime\n\n` +
-                                      `*🔧 How to use:*\n` +
-                                      `1. Copy the full session string above\n` +
-                                      `2. It starts with "SILA-MD~" followed by base64\n` +
-                                      `3. Save it as your session\n\n` +
-                                      `*🤖 Bot:* SILA-MD\n` +
-                                      `*👨‍💻 Owner:* SILA\n` +
-                                      `*⭐ Version:* 2.0.0`
-                            });
-                            console.log("📄 Base64 session sent successfully");
+                            // Message text
+                            const msgText = `*SESSION ID ✅*\n\n${fullSession}`;
                             
-                            // Also send as document for easy saving
-                            const sessionBuffer = Buffer.from(prefixedBase64);
-                            await SILA_MD.sendMessage(userJid, {
-                                document: sessionBuffer,
-                                mimetype: 'text/plain',
-                                fileName: 'SILA-MD_Session.txt'
-                            });
-                            console.log("📎 Session file sent as document");
-
-                            // Send warning message
-                            await SILA_MD.sendMessage(userJid, {
-                                text: `⚠️ *DO NOT SHARE THIS SESSION WITH ANYBODY* ⚠️\n\n` +
-                                      `┌┤✑  Thanks for using SILA-MD\n` +
-                                      `│└────────────┈ ⳹        \n` +
-                                      `│©2025 SILA \n` +
-                                      `└─────────────────┈ ⳹\n\n` +
-                                      `*💾 Save this session message!*\n` +
-                                      `*📝 Session Format:* SILA-MD~[base64]`
-                            });
-                            console.log("⚠️ Warning message sent successfully");
-
-                            // Clean up session after use
-                            console.log("🧹 Cleaning up session...");
-                            await delay(1000);
+                            // Buttons configuration
+                            const msgButtons = [
+                                { 
+                                    name: 'cta_copy', 
+                                    buttonParamsJson: JSON.stringify({ 
+                                        display_text: '📋 Copy Session', 
+                                        copy_code: fullSession 
+                                    }) 
+                                }
+                            ];
+                            
+                            // Send buttons using gifted-btns
+                            await sendButtons(SILA_MD, userJid, msgText, msgButtons);
+                            console.log("📄 Session with copy button sent successfully");
+                            
                             removeFile(dirs);
-                            console.log("✅ Session cleaned up successfully");
-                            console.log("🎉 Process completed successfully!");
                             
-                            // Send success response to the HTTP request
                             if (!res.headersSent) {
                                 res.send({ 
                                     success: true, 
-                                    message: 'Session generated and sent to your WhatsApp!',
-                                    type: 'base64'
+                                    message: 'Session sent to your WhatsApp!' 
                                 });
                             }
                         } else {
-                            throw new Error('Failed to generate Base64 session');
+                            throw new Error('Failed to generate session');
                         }
                     } catch (error) {
-                        console.error("❌ Error sending messages:", error);
+                        console.error("❌ Error:", error);
                         removeFile(dirs);
                         if (!res.headersSent) {
                             res.status(500).send({ 
                                 success: false, 
-                                message: 'Error generating session: ' + error.message 
+                                message: 'Error generating session' 
                             });
                         }
                     }
                 }
 
-                if (isNewLogin) {
-                    console.log("🔐 New login via pair code");
-                }
-
-                if (isOnline) {
-                    console.log("📶 Client is online");
-                }
-
                 if (connection === 'close') {
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
-
                     if (statusCode === 401) {
-                        console.log("❌ Logged out from WhatsApp. Need to generate new pair code.");
+                        console.log("❌ Logged out");
                     } else {
-                        console.log("🔁 Connection closed — restarting...");
                         initiateSession();
                     }
                 }
@@ -194,19 +148,17 @@ router.get('/', async (req, res) => {
                     let code = await SILA_MD.requestPairingCode(num);
                     code = code?.match(/.{1,4}/g)?.join('-') || code;
                     if (!res.headersSent) {
-                        console.log({ num, code });
                         await res.send({ 
                             success: true, 
-                            code: code,
-                            message: 'Pairing code sent! Enter it in WhatsApp.'
+                            code: code
                         });
                     }
                 } catch (error) {
-                    console.error('Error requesting pairing code:', error);
+                    console.error('Error:', error);
                     if (!res.headersSent) {
                         res.status(503).send({ 
                             success: false, 
-                            message: 'Failed to get pairing code. Please check your phone number and try again.' 
+                            message: 'Failed to get pairing code' 
                         });
                     }
                 }
@@ -214,7 +166,7 @@ router.get('/', async (req, res) => {
 
             SILA_MD.ev.on('creds.update', saveCreds);
         } catch (err) {
-            console.error('Error initializing session:', err);
+            console.error('Error:', err);
             if (!res.headersSent) {
                 res.status(503).send({ 
                     success: false, 
@@ -227,20 +179,13 @@ router.get('/', async (req, res) => {
     await initiateSession();
 });
 
-// Global uncaught exception handler
 process.on('uncaughtException', (err) => {
     let e = String(err);
     if (e.includes("conflict")) return;
     if (e.includes("not-authorized")) return;
     if (e.includes("Socket connection timeout")) return;
-    if (e.includes("rate-overlimit")) return;
     if (e.includes("Connection Closed")) return;
     if (e.includes("Timed Out")) return;
-    if (e.includes("Value not found")) return;
-    if (e.includes("Stream Errored")) return;
-    if (e.includes("Stream Errored (restart required)")) return;
-    if (e.includes("statusCode: 515")) return;
-    if (e.includes("statusCode: 503")) return;
     console.log('Caught exception: ', err);
 });
 
